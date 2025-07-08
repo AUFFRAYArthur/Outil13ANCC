@@ -4,9 +4,10 @@ import { Tabs } from './components/Tabs';
 import { TableauRetraitements } from './components/TableauRetraitements';
 import { SyntheseANCC } from './components/SyntheseANCC';
 import { RapportFinal } from './components/RapportFinal';
+import { Notice } from './components/Notice';
 import { useAncc } from './hooks/useAncc';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Adjustments } from './types';
+import { Adjustments, BilanItem } from './types';
 
 const TABS = ['Retraitements', 'Synthèse', 'Rapport'];
 
@@ -18,12 +19,14 @@ function App() {
     setIsLocked,
     updateAdjustment,
     updateBilanItemValue,
+    addBilanItem,
+    deleteBilanItem,
     getAdjustmentFor,
     results,
     completeness,
     taxRate,
     adjustments,
-    loadAdjustments,
+    loadState,
   } = useAncc();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,10 +63,11 @@ function App() {
           throw new Error("Le fichier n'est pas un fichier texte.");
         }
         const data = JSON.parse(text);
-        if (data && typeof data.adjustments === 'object' && data.adjustments !== null) {
-          loadAdjustments(data.adjustments as Adjustments);
+        if (data && typeof data.adjustments === 'object' && data.adjustments !== null && Array.isArray(data.bilan)) {
+          loadState({ adjustments: data.adjustments as Adjustments, bilan: data.bilan as BilanItem[] });
+          alert('Données importées avec succès !');
         } else {
-          alert('Fichier JSON invalide ou mal formaté. Assurez-vous qu\'il contient une clé "adjustments".');
+          alert('Fichier JSON invalide ou mal formaté. Assurez-vous qu\'il contient les clés "adjustments" et "bilan".');
         }
       } catch (error) {
         console.error("Erreur lors de l'importation du JSON:", error);
@@ -103,6 +107,10 @@ function App() {
           <div className="mb-8">
             <Tabs tabs={TABS} activeTab={activeTab} setActiveTab={setActiveTab} />
           </div>
+          
+          <div className="mb-8">
+            <Notice />
+          </div>
 
           <AnimatePresence mode="wait">
             <motion.div
@@ -120,6 +128,8 @@ function App() {
                   getAdjustmentFor={getAdjustmentFor}
                   updateAdjustment={updateAdjustment}
                   updateBilanItemValue={updateBilanItemValue}
+                  addBilanItem={addBilanItem}
+                  deleteBilanItem={deleteBilanItem}
                 />
               )}
               {activeTab === 'Synthèse' && (

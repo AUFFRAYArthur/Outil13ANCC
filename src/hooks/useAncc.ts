@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { bilanInitialData } from '../data/bilanInitial';
-import { Adjustments, BilanItem, AnccResult, Adjustment } from '../types';
+import { Adjustments, BilanItem, AnccResult, Adjustment, BilanCategory } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 const TAX_RATE = 0.25; // Taux d'impôt sur les sociétés de 25%
 
@@ -18,9 +19,31 @@ export const useAncc = () => {
     );
   }, [isLocked]);
 
+  const addBilanItem = useCallback((label: string, category: BilanCategory, value: number) => {
+    if (isLocked) return;
+    const newItem: BilanItem = {
+      id: uuidv4(),
+      label,
+      category,
+      value,
+      isFictif: false,
+    };
+    setBilan(prev => [...prev, newItem]);
+  }, [isLocked]);
+
+  const deleteBilanItem = useCallback((id: string) => {
+    if (isLocked) return;
+    setBilan(prev => prev.filter(item => item.id !== id));
+    setAdjustments(prev => {
+      const newAdjustments = { ...prev };
+      delete newAdjustments[id];
+      return newAdjustments;
+    });
+  }, [isLocked]);
+
   const getAdjustmentFor = useCallback((id: string): Adjustment => {
     const item = bilan.find(i => i.id === id);
-    const defaultApplyTax = item?.applyDeferredTax !== false && !item?.isFictif;
+    const defaultApplyTax = item?.category !== 'capitaux-propres' && item?.applyDeferredTax !== false && !item?.isFictif;
     return adjustments[id] || { revaluedValue: null, justification: '', applyDeferredTax: defaultApplyTax };
   }, [adjustments, bilan]);
 
@@ -32,8 +55,13 @@ export const useAncc = () => {
     }));
   }, [isLocked]);
 
-  const loadAdjustments = useCallback((newAdjustments: Adjustments) => {
-    setAdjustments(newAdjustments);
+  const loadState = useCallback((state: { bilan: BilanItem[], adjustments: Adjustments }) => {
+    if (Array.isArray(state.bilan) && typeof state.adjustments === 'object' && state.adjustments !== null) {
+      setBilan(state.bilan);
+      setAdjustments(state.adjustments);
+    } else {
+      console.error("Format d'état invalide pour l'importation.");
+    }
   }, []);
 
   const results: AnccResult = useMemo(() => {
@@ -54,6 +82,8 @@ export const useAncc = () => {
     let taxableNetAdjustments = 0;
 
     bilan.forEach(item => {
+      if (item.category === 'capitaux-propres') return;
+
       const adj = getAdjustmentFor(item.id);
       let diff = 0;
       let hasAdjustment = false;
@@ -67,7 +97,7 @@ export const useAncc = () => {
       }
 
       if (hasAdjustment) {
-        if (item.category === 'dettes') {
+        if (item.category === 'dettes' || item.category === 'hors-bilan') {
           diff = -diff;
         }
 
@@ -100,12 +130,12 @@ export const useAncc = () => {
   }, [bilan, adjustments, getAdjustmentFor]);
 
   const completeness = useMemo(() => {
-    const totalItems = bilan.filter(i => !i.isFictif).length;
+    const totalItems = bilan.filter(i => !i.isFictif && i.category !== 'capitaux-propres').length;
     if (totalItems === 0) return 100;
     const adjustedItems = Object.keys(adjustments).filter(k => {
         const adj = adjustments[k];
         const item = bilan.find(i => i.id === k);
-        return !item?.isFictif && adj.revaluedValue !== null;
+        return !item?.isFictif && item?.category !== 'capitaux-propres' && adj.revaluedValue !== null;
     }).length;
     return Math.round((adjustedItems / totalItems) * 100);
   }, [adjustments, bilan]);
@@ -115,7 +145,9 @@ export const useAncc = () => {
     adjustments,
     updateAdjustment,
     updateBilanItemValue,
-    loadAdjustments,
+    addBilanItem,
+    deleteBilanItem,
+    loadState,
     results,
     isLocked,
     setIsLocked,
